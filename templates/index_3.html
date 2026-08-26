@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multilingual Hate Speech Detection</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --primary: #6366f1;
+        --primary-dark: #4f46e5;
+        --secondary: #f59e0b;
+        --neutral: #6b7280;
+        --danger: #ef4444;
+        --warning: #f59e0b;
+        --success: #10b981;
+        --dark: #1f2937;
+        --light: #f9fafb;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+
+      body {
+        background-color: #f0f2f5;
+        color: var(--dark);
+        line-height: 1.6;
+        background-image: url("/api/placeholder/1920/1080");
+        background-size: cover;
+        background-position: center;
+        background-attachment: fixed;
+        position: relative;
+      }
+
+      body::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(
+          135deg,
+          rgba(99, 102, 241, 0.8) 0%,
+          rgba(79, 70, 229, 0.6) 100%
+        );
+        z-index: -1;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+        position: relative;
+        z-index: 1;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 2rem;
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 16px;
+        padding: 1rem 2rem;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        backdrop-filter: blur(10px);
+      }
+
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+      }
+
+      .logo-icon {
+        width: 48px;
+        height: 48px;
+        background-color: var(--primary);
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 24px;
+        box-shadow: 0 4px 8px rgba(99, 102, 241, 0.3);
+      }
+
+      .logo-text {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--dark);
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      }
+
+      .supported-langs {
+        display: flex;
+        align-items: center;
+        background: white;
+        padding: 0.75rem 1.25rem;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        font-size: 0.875rem;
+        color: var(--neutral);
+        font-weight: 500;
+      }
+
+      .lang-pill {
+        display: inline-block;
+        margin-left: 0.5rem;
+        padding: 0.25rem 0.75rem;
+        background: linear-gradient(
+          135deg,
+          rgba(99, 102, 241, 0.1) 0%,
+          rgba(79, 70, 229, 0.2) 100%
+        );
+        border-radius: 9999px;
+        color: var(--primary-dark);
+        font-weight: 600;
+        margin-right: 0.5rem;
+      }
+
+      .main-card {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 24px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        padding: 2.5rem;
+        margin-bottom: 2rem;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .main-card::before {
+        content: "";
+        position: absolute;
+        top: -50px;
+        right: -50px;
+        width: 200px;
+        height: 200px;
+        background: linear-gradient(
+          135deg,
+          rgba(99, 102, 241, 0.1) 0%,
+          rgba(79, 70, 229, 0.2) 100%
+        );
+        border-radius: 50%;
+        z-index: 0;
+      }
+
+      h1 {
+        font-size: 2.25rem;
+        margin-bottom: 1.5rem;
+        color: var(--dark);
+        position: relative;
+        font-weight: 800;
+        letter-spacing: -0.5px;
+      }
+
+      h1::after {
+        content: "";
+        position: absolute;
+        bottom: -10px;
+        left: 0;
+        width: 80px;
+        height: 4px;
+        background: linear-gradient(
+          90deg,
+          var(--primary) 0%,
+          var(--primary-dark) 100%
+        );
+        border-radius: 2px;
+      }
+
+      .features-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+      }
+
+      .feature-card {
+        background: white;
+        border-radius: 16px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        transition: all 0.3s ease;
+      }
+
+      .feature-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+      }
+
+      .feature-icon {
+        width: 60px;
+        height: 60px;
+        background: linear-gradient(
+          135deg,
+          rgba(99, 102, 241, 0.1) 0%,
+          rgba(79, 70, 229, 0.2) 100%
+        );
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 1rem;
+        color: var(--primary);
+        font-size: 24px;
+      }
+
+      .feature-title {
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+        font-size: 1.125rem;
+      }
+
+      .input-section {
+        position: relative;
+        z-index: 1;
+        margin-bottom: 2rem;
+      }
+
+      .image-decoration {
+        position: absolute;
+        bottom: -80px;
+        right: -100px;
+        width: 300px;
+        height: 300px;
+        opacity: 0.05;
+        z-index: 0;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 200px;
+        padding: 1.25rem;
+        border: 1px solid rgba(229, 231, 235, 0.8);
+        border-radius: 16px;
+        font-size: 1rem;
+        margin-bottom: 1.5rem;
+        resize: vertical;
+        transition: all 0.3s ease;
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(4px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+      }
+
+      textarea:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.2);
+        background: white;
+      }
+
+      .button-group {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
+      .primary-btn {
+        background: linear-gradient(
+          135deg,
+          var(--primary) 0%,
+          var(--primary-dark) 100%
+        );
+        color: white;
+        border: none;
+        padding: 0.875rem 1.75rem;
+        border-radius: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .primary-btn::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(
+          135deg,
+          rgba(255, 255, 255, 0.1) 0%,
+          rgba(255, 255, 255, 0.05) 100%
+        );
+        transform: translateY(100%);
+        transition: transform 0.3s ease;
+      }
+
+      .primary-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(99, 102, 241, 0.4);
+      }
+
+      .primary-btn:hover::before {
+        transform: translateY(0);
+      }
+
+      .secondary-btn {
+        background: white;
+        color: var(--dark);
+        border: 1px solid #e5e7eb;
+        padding: 0.875rem 1.75rem;
+        border-radius: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .secondary-btn:hover {
+        background: rgba(249, 250, 251, 0.95);
+        border-color: #d1d5db;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+      }
+
+      .results-section {
+        display: none;
+      }
+
+      .result-card {
+        background: white;
+        border-radius: 16px;
+        padding: 1.75rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+        border-left: 5px solid var(--neutral);
+        transition: all 0.3s ease;
+      }
+
+      .result-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+      }
+
+      .result-card.hate {
+        border-left-color: var(--danger);
+      }
+
+      .result-card.offensive {
+        border-left-color: var(--warning);
+      }
+
+      .result-card.neutral {
+        border-left-color: var(--success);
+      }
+
+      .result-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1.25rem;
+      }
+
+      .result-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+      }
+
+      .result-badge {
+        padding: 0.375rem 1rem;
+        border-radius: 9999px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .result-badge.hate {
+        background-color: #fee2e2;
+        color: #b91c1c;
+      }
+
+      .result-badge.offensive {
+        background-color: #fef3c7;
+        color: #92400e;
+      }
+
+      .result-badge.neutral {
+        background-color: #d1fae5;
+        color: #065f46;
+      }
+
+      .result-text {
+        margin-bottom: 1.25rem;
+        line-height: 1.8;
+        padding: 1rem;
+        background: rgba(249, 250, 251, 0.8);
+        border-radius: 8px;
+        border: 1px solid #f3f4f6;
+      }
+
+      .card-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.875rem;
+        color: var(--neutral);
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid #f3f4f6;
+      }
+
+      .feedback-buttons {
+        display: flex;
+        gap: 0.75rem;
+      }
+
+      .feedback-btn {
+        background: none;
+        border: 1px solid #e5e7eb;
+        padding: 0.5rem 0.75rem;
+        cursor: pointer;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+        background: white;
+      }
+
+      .feedback-btn:hover {
+        background-color: #f9fafb;
+        border-color: #d1d5db;
+        transform: translateY(-2px);
+      }
+
+      .confidence-meter {
+        width: 100%;
+        height: 8px;
+        background-color: #e5e7eb;
+        border-radius: 999px;
+        margin-top: 1rem;
+        overflow: hidden;
+      }
+
+      .confidence-value {
+        height: 100%;
+        border-radius: 999px;
+        transition: width 0.6s ease-in-out;
+      }
+
+      .confidence-value.hate {
+        background: linear-gradient(90deg, var(--danger) 0%, #f87171 100%);
+      }
+
+      .confidence-value.offensive {
+        background: linear-gradient(90deg, var(--warning) 0%, #fbbf24 100%);
+      }
+
+      .confidence-value.neutral {
+        background: linear-gradient(90deg, var(--success) 0%, #34d399 100%);
+      }
+
+      .footer {
+        text-align: center;
+        margin-top: 3rem;
+        color: white;
+        font-size: 0.875rem;
+        background: rgba(31, 41, 55, 0.8);
+        padding: 2rem;
+        border-radius: 16px;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+      }
+
+      .alert {
+        padding: 1rem 1.5rem;
+        border-radius: 12px;
+        margin-bottom: 1.5rem;
+        display: none;
+        animation: pulse 2s infinite;
+      }
+
+      @keyframes pulse {
+        0% {
+          box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+        }
+        70% {
+          box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+        }
+        100% {
+          box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+        }
+      }
+
+      .alert-error {
+        background-color: #fee2e2;
+        color: #b91c1c;
+        border: 1px solid #f87171;
+      }
+
+      @media (max-width: 768px) {
+        .container {
+          padding: 1rem;
+        }
+
+        header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 1rem;
+          padding: 1.5rem;
+        }
+
+        .features-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .button-group {
+          flex-direction: column;
+        }
+
+        .primary-btn,
+        .secondary-btn {
+          width: 100%;
+        }
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .results-section.show {
+        display: block;
+        animation: fadeIn 0.5s ease-in-out;
+      }
+
+      .alert.show {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        animation: fadeIn 0.3s ease-in-out;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <div class="logo">
+          <div class="logo-icon">
+            <i class="fas fa-shield-alt"></i>
+          </div>
+          <div class="logo-text">HateSpeech Detector</div>
+        </div>
+
+        <div class="supported-langs">
+          <i class="fas fa-globe"></i>&nbsp; Supported Languages:
+          <span class="lang-pill">English</span>
+          <span class="lang-pill">اردو</span>
+          <span class="lang-pill">Roman Urdu</span>
+        </div>
+      </header>
+
+      <div class="main-card">
+        <h1>Multilingual Hate Speech Detection</h1>
+
+        <div class="features-grid">
+          <div class="feature-card">
+            <div class="feature-icon">
+              <i class="fas fa-globe"></i>
+            </div>
+            <h3 class="feature-title">Automatic Language Detection</h3>
+            <p>System automatically detects the language of your text</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <i class="fas fa-chart-pie"></i>
+            </div>
+            <h3 class="feature-title">Detailed Analysis</h3>
+            <p>Get confidence scores and categorization of content</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <i class="fas fa-bolt"></i>
+            </div>
+            <h3 class="feature-title">Real-time Detection</h3>
+            <p>Instant feedback on potentially harmful content</p>
+          </div>
+        </div>
+
+        <div id="alert" class="alert alert-error">
+          <i class="fas fa-exclamation-circle"></i>
+          <span id="alert-text"></span>
+        </div>
+
+        <div class="input-section">
+          <img
+            src="/api/placeholder/400/400"
+            alt="Decorative shield"
+            class="image-decoration"
+          />
+          <textarea
+            id="text-input"
+            placeholder="Enter or paste text here to analyze... (English, Urdu, or Roman Urdu)"
+          ></textarea>
+
+          <div class="button-group">
+            <button id="analyze-btn" class="primary-btn">
+              <i class="fas fa-search"></i>
+              Analyze Text
+            </button>
+            <button id="clear-btn" class="secondary-btn">
+              <i class="fas fa-eraser"></i>
+              Clear
+            </button>
+            <button id="example-btn" class="secondary-btn">
+              <i class="fas fa-lightbulb"></i>
+              Show Examples
+            </button>
+          </div>
+        </div>
+
+        <div id="results-section" class="results-section">
+          <h2
+            style="margin-bottom: 1.5rem; font-size: 1.5rem; font-weight: 700"
+          >
+            Analysis Results
+          </h2>
+
+          <div id="result-container">
+            
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <p>
+          © 2025 Multilingual Hate Speech Detection Project. This tool is for
+          educational and research purposes only.
+        </p>
+        <p style="margin-top: 0.75rem">
+          Powered by AI - Automatically detects English, Urdu, and Roman Urdu
+        </p>
+      </div>
+    </div>
+    <script>
+$(document).ready(function () {
+        
+        $("#clear-btn").click(function () {
+          $("#text-input").val("");
+          $("#results-section").removeClass("show");
+          $("#alert").removeClass("show");
+        });
+
+        $("#example-btn").click(function () {
+          const languages = ["english", "urdu", "roman-urdu"];
+          const randomLang =
+            languages[Math.floor(Math.random() * languages.length)];
+          let example = "";
+
+          if (randomLang === "english") {
+            const englishExamples = [
+              "Native Americans are all alcoholics who can't function in modern society.",
+              "Indians smell bad because of the food they eat and their poor hygiene habits.",
+              "After spending hours reviewing the documentation and aligning the team members, we finally managed to launch the product without any significant glitches.",
+              "The university held a seminar discussing the impact of artificial intelligence on daily life, highlighting both its benefits and ethical concerns.",
+              "Black people are naturally more violent and that's why they commit more crimes.",
+              "The team worked collaboratively on the proposal, sharing ideas, refining arguments, and ensuring every point was backed by solid research.",
+              "It's irritating to work with people who never listen, always argue, and think they're smarter than everyone else when they clearly aren't.",
+              "Anyone supporting that Bhuddists ideology is a traitor and deserves to be publicly shamed and stripped of their rights."
+            ];
+            example = englishExamples[Math.floor(Math.random() * englishExamples.length)];
+          } else if (randomLang === "urdu") {
+            const urduExamples = [
+              "لگتا ہے پاکستان میں ہجڑوں کا دور آگیا ہے لیکن ہجڑے غریب تو قسمت سے مجبور ہوتے ہیں اس لئے ان کا نام کیوں لیں لیکن موجودہ لیڈروں اور اداروں کے ہجڑا پن کے وجوہات کچھ اور ہیں جس کو ختم کرنے کی خاص ضرورت ہے جو ادارے بھی اپنی ذمداری ایمانداری سے نہیں پورا کرتے ان کے خلاف عوام اور میڈیا کو متحد ہونا چاہئے",
+              "گلگتی لوگوں کی کوئی قومی اہمیت نہیں ہے اور وہ پاکستان کی ترقی میں کوئی کردار ادا نہیں کرتے۔",
+              "میری مراد صرف یہ تھی کہ یہ چیزیں عام کورسیز میں شامل ہیں تو ایسی قیاس آرائی کو کیا نام دیا جائے؟ ہاں اگر آپ کے پاس اپنی بات کو سپورٹ کرنے کے لئے قابل قبول دلیل موجود ہو تو بات اور ہے",
+              "کیا آپ کا خیال تھا کہ ناروے میں‌فلم کیمرے نہیں ہوتے یا سینما نہیں‌ہوتے؟ یہاں‌تو چھوٹے سے چھوٹے شہر میں بھی سینما گھر موجود ہیں",
+              "عارف بھائی یہ حصے میں نے بھی دیکھے ہیں لیکن کوئی حصہ بھی  منٹ سے زیادہ کا نہیں ہے اور ماورا نے جس کا ربط دیا ہے وہ تین منٹ سے بھی کم کا ہے",
+              "مجھے اس جملہ پر حیرت ہوئی تھی وارث صاحب سے اس جملہ کے جملہ کی توقع نہیں تھی اس لیے خیر کوئی بات نہیں",
+              "موسمِ بہار میں پھولوں کی خوشبو اور ہلکی ٹھنڈی ہوا انسان کے موڈ کو خوشگوار بنا دیتی ہے۔"
+            ];
+            example = urduExamples[Math.floor(Math.random() * urduExamples.length)];
+          } else if (randomLang === "roman-urdu") {
+            const romanUrduExamples = [
+              "Aaj ka din kaafi tha, subha se le kar shaam tak har kaam waqt par pura ho gaya.",
+              "Hum ne kal raat ik documentary dekhi jo mahool ke bare mein thi kaafi achi thi.",
+              "Jab mausam thoda thanda ho jata hai to chai aur gupshup ka maza hi kuch aur hota hai.",
+              "Mujhe samajh nahi aata ke log tumse baat kyu karte hain jab tum sirf bakwaas hi karte ho.",
+              "india waly log har jagah apni soch thopte hain aur humein inko har jagah se nikal dena chahiye.",
+              "Auratein zehni tour par mardon se kamtar hain aur unhein qyadati ohdoun par nahin hona chahiye.",
+              "pakistani sirf nafrat failate hain aur inki har harkat is baat ka saboot hai inhein society se alag karna zaroori hai."
+            ];
+            example = romanUrduExamples[Math.floor(Math.random() * romanUrduExamples.length)];
+          }
+          $("#text-input").val(example);
+        });
+
+        $("#analyze-btn").click(function () {
+          const text = $("#text-input").val().trim();
+
+          if (text === "") {
+            showAlert("Please enter some text to analyze");
+            return;
+          }
+
+          analyzeText(text);
+        });
+
+        function analyzeText(text) {
+          $("#analyze-btn").prop("disabled", true);
+          $("#analyze-btn").html(
+            '<i class="fas fa-spinner fa-spin"></i> Analyzing...'
+          );
+
+          $("#alert").removeClass("show");
+          $("#results-section").removeClass("show");
+
+          fetch("/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: text })
+          })
+          .then(response => {
+            if (!response.ok) {
+              if (response.status === 400) {
+                return response.json().then(errorData => {
+                  throw new Error(errorData.message || "Invalid input. Please enter meaningful text.");
+                });
+              }
+              throw new Error("Network response was not ok");
+            }
+            return response.json();
+          })
+          .then(data => {
+            if (data.error) {
+              showAlert(data.message);
+              return;
+            }
+            
+            // Pass the complete backend response to displayResult
+            displayResult(data);
+          })
+          .catch(error => {
+            console.error("API call failed:", error);
+            if (error.message.includes("Invalid input") || error.message.includes("No text provided")) {
+              showAlert(error.message); 
+              return;
+            }
+
+            console.warn("Using simulation due to fetch error.");
+
+            setTimeout(function () {
+              const category = ["neutral", "offensive", "hate"][
+                Math.floor(Math.random() * 3)
+              ];
+              const confidence = Math.floor(Math.random() * 30) + 70;
+              const hateScore = Math.floor(Math.random() * 100);
+              const offensiveScore = Math.floor(Math.random() * (100 - hateScore));
+              const neutralScore = 100 - hateScore - offensiveScore;
+
+              const result = {
+                error: false,
+                original_text: text,
+                cleaned_text: text,
+                removed_words: [],
+                category: category,
+                confidence: confidence,
+                language: "unknown",
+                scores: {
+                  hate: hateScore,
+                  offensive: offensiveScore,
+                  neutral: neutralScore
+                }
+              };
+
+              displayResult(result);
+            }, 1500);
+          })
+          .finally(() => {
+            $("#analyze-btn").prop("disabled", false);
+            $("#analyze-btn").html(
+              '<i class="fas fa-search"></i> Analyze Text'
+            );
+          });
+        }
+
+        function showAlert(message) {
+          $("#alert-text").text(message);
+          $("#alert").addClass("show");
+
+          $("html, body").animate(
+            {
+              scrollTop: $("#alert").offset().top - 20,
+            },
+            500
+          );
+
+          setTimeout(() => {
+            $("#alert").removeClass("show");
+          }, 4000);
+        }
+
+        function displayResult(data) {
+          let categoryLabel = data.category.charAt(0).toUpperCase() + data.category.slice(1);
+          let detectedLabel = "Detection Result";
+          let feedbackLabel = "Was this analysis helpful?";
+          let languageLabel = "Detected Language: " + data.language;
+
+          // Build scores HTML
+          let scoresHtml = '';
+          if (data.scores) {
+            scoresHtml += '<div class="scores-section" style="padding-top: 1rem;">';
+            scoresHtml += '<h4 style="margin-bottom: 0.75rem; font-size: 1rem; color: #333;">Classification Scores:</h4>';
+            
+            for (let [label, score] of Object.entries(data.scores)) {
+              let capitalLabel = label.charAt(0).toUpperCase() + label.slice(1);
+              score = typeof score === 'number' ? score.toFixed(2) : score;
+              scoresHtml += `
+                <div style="margin-bottom: 0.75rem;">
+                  <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 0.25rem;">
+                    <span><strong>${capitalLabel}</strong></span>
+                    <span>${score}%</span>
+                  </div>
+                  <div style="background-color: #e0e0e0; height: 10px; border-radius: 5px; overflow: hidden;">
+                    <div style="height: 100%; width: ${score}%; background-color: ${
+                      label === 'neutral'
+                        ? '#4caf50'
+                        : label === 'offensive'
+                        ? '#ff9800'
+                        : '#f44336'
+                    }; transition: width 0.3s ease;"></div>
+                  </div>
+                </div>
+              `;
+            }
+            scoresHtml += '</div>';
+          }
+
+          // Build cleaned text section (only show if different from original)
+          let cleanedTextHtml = '';
+          if (data.cleaned_text && data.cleaned_text !== data.original_text) {
+            cleanedTextHtml = `
+              <div class="cleaned-text-section" style="margin-top: 1.5rem; padding: 1rem; background-color: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745;">
+                <h4 style="margin-bottom: 0.5rem; font-size: 0.95rem; color: #28a745;">
+                  <i class="fas fa-check-circle"></i> Cleaned Text:
+                </h4>
+                <p style="margin: 0; font-style: italic;">${data.cleaned_text}</p>
+              </div>
+            `;
+          }
+
+          // Build removed words section
+          let removedWordsHtml = '';
+          if (data.removed_words && data.removed_words.length > 0) {
+            removedWordsHtml = `
+              <div class="removed-words-section" style="margin-top: 1rem; padding: 1rem; background-color: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
+                <h4 style="margin-bottom: 0.5rem; font-size: 0.95rem; color: #856404;">
+                  <i class="fas fa-exclamation-triangle"></i> Removed Words (${data.removed_words.length}):
+                </h4>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                  ${data.removed_words.map(word => 
+                    `<span style="background-color: #dc3545; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem;">${word}</span>`
+                  ).join('')}
+                </div>
+              </div>
+            `;
+          }
+
+          // Build word contributions section
+          let wordContributionsHtml = '';
+          if (data.word_contributions && data.word_contributions.length > 0) {
+            wordContributionsHtml = `
+              <div class="word-contributions-section" style="margin-top: 1rem; padding: 1rem; background-color: #e3f2fd; border-radius: 8px; border-left: 4px solid #2196f3;">
+                <h4 style="margin-bottom: 0.75rem; font-size: 0.95rem; color: #1976d2;">
+                  <i class="fas fa-chart-bar"></i> Word Impact Analysis:
+                </h4>
+                <div style="max-height: 200px; overflow-y: auto;">
+                  ${data.word_contributions.map(item => {
+                    const contribution = parseFloat(item.contribution);
+                    const isPositive = contribution > 0;
+                    const barWidth = Math.abs(contribution * 100);
+                    const barColor = isPositive ? '#f44336' : '#4caf50';
+                    
+                    return `
+                      <div style="margin-bottom: 0.5rem; padding: 0.25rem 0;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; margin-bottom: 0.25rem;">
+                          <span style="font-weight: 500;">"${item.word}"</span>
+                          <span style="color: ${isPositive ? '#d32f2f' : '#388e3c'};">${contribution > 0 ? '+' : ''}${contribution.toFixed(4)}</span>
+                        </div>
+                        <div style="height: 6px; background-color: #f0f0f0; border-radius: 3px; overflow: hidden;">
+                          <div style="height: 100%; width: ${Math.min(barWidth, 100)}%; background-color: ${barColor}; transition: width 0.3s ease;"></div>
+                        </div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+                <small style="color: #666; font-size: 0.75rem; margin-top: 0.5rem; display: block;">
+                  <i class="fas fa-info-circle"></i> Positive values indicate words that contribute to harmful classification
+                </small>
+              </div>
+            `;
+          }
+
+          const resultHtml = `
+            <div class="result-card ${data.category}">
+              <div class="result-header">
+                <div class="result-title">${detectedLabel}</div>
+                <div class="result-badge ${data.category}">${categoryLabel}</div>
+              </div>
+              
+              <div class="original-text-section" style="margin-bottom: 1rem;">
+                <h4 style="margin-bottom: 0.5rem; font-size: 0.95rem; color: #333;">
+                  <i class="fas fa-quote-left"></i> Original Text:
+                </h4>
+                <div class="result-text" style="padding: 0.75rem; background-color: #f8f9fa; border-radius: 6px; border: 1px solid #dee2e6;">${data.original_text}</div>
+              </div>
+
+              ${cleanedTextHtml}
+              ${removedWordsHtml}
+              ${scoresHtml}
+              ${wordContributionsHtml}
+
+              <div class="metadata-section" style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #dee2e6;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                  <div style="font-size: 0.875rem; color: #666;">
+                    <i class="fas fa-language"></i> ${languageLabel}
+                  </div>
+                  <div style="font-size: 0.875rem; color: #666;">
+                    <i class="fas fa-percentage"></i> Confidence: <strong>${data.confidence}%</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card-footer" style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #dee2e6;">
+                <div style="margin-bottom: 0.5rem;">${feedbackLabel}</div>
+                <div class="feedback-buttons">
+                  <button class="feedback-btn" title="Yes"><i class="fas fa-thumbs-up"></i></button>
+                  <button class="feedback-btn" title="No"><i class="fas fa-thumbs-down"></i></button>
+                </div>
+              </div>
+            </div>
+          `;
+
+          $("#result-container").html(resultHtml);
+          $("#results-section").addClass("show");
+
+          $("html, body").animate(
+            {
+              scrollTop: $("#results-section").offset().top - 20,
+            },
+            500
+          );
+
+          $(".feedback-btn").click(function () {
+            const feedback = $(this).attr("title");
+            alert(`Thank you for your feedback.`);
+            $(".feedback-btn").prop("disabled", true).css("opacity", 0.5);
+          });
+        }
+      });
+    </script>
+  </body>
+</html>

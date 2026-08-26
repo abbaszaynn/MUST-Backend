@@ -1,0 +1,12 @@
+{
+  "fixture_size": 15,
+  "classifier_accuracy_on_fixture": 0.8,
+  "accuracy_note": "Small hand-built proxy fixture, not the original model test split - not a reproduction of the published 95.7% figure.",
+  "sarcasm_trigger_rate": 1.0,
+  "sarcasm_ambiguous_band_size": 1,
+  "clustering_campaign_detected": true,
+  "legal_mapping_match_rate": 0.333,
+  "legal_mapping_flagged_items": 9,
+  "escalation_invariant_checked_count": 9,
+  "escalation_invariant_passed": true
+}

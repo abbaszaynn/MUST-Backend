@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.log
+*.db
+.vscode/
+.ipynb_checkpoints/
+*.pkl
+*.bin
+*.safetensors
+bertuncased-combine/
+roberta_combine_f1/
+xlm-roberta_combine_extended/

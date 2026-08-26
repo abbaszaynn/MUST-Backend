@@ -1,0 +1,48 @@
+[
+  {
+    "id": "ppc_153a",
+    "law": "Pakistan Penal Code",
+    "section": "153-A",
+    "title": "Promoting enmity between groups",
+    "jurisdiction": "Pakistan (Federal)",
+    "keywords": ["religion", "sect", "ethnic", "enmity", "hatred between", "caste", "language group"],
+    "categories": ["hate"]
+  },
+  {
+    "id": "ppc_295a",
+    "law": "Pakistan Penal Code",
+    "section": "295-A",
+    "title": "Deliberate acts to outrage religious feelings",
+    "jurisdiction": "Pakistan (Federal)",
+    "keywords": ["blasphemy", "religious sentiment", "insult religion", "prophet", "quran", "sacred"],
+    "categories": ["hate"]
+  },
+  {
+    "id": "peca_2016",
+    "law": "Prevention of Electronic Crimes Act (PECA) 2016",
+    "section": "relevant hate-speech/cyber-offense sections - exact subsection TBD, verify against current statute text",
+    "title": "Hate speech / cyber offenses committed via electronic communication",
+    "jurisdiction": "Pakistan (Federal, electronic communication)",
+    "keywords": ["online", "facebook", "social media", "post", "comment", "electronic communication"],
+    "categories": ["hate", "offensive"]
+  },
+  {
+    "id": "constitution_art20",
+    "law": "Constitution of Pakistan",
+    "section": "Article 20",
+    "title": "Freedom to profess religion and to manage religious institutions",
+    "jurisdiction": "Pakistan (Federal, Constitutional)",
+    "keywords": ["religious freedom", "right to religion", "freedom of belief"],
+    "categories": ["hate"]
+  },
+  {
+    "id": "gb_local_unmapped",
+    "law": "Gilgit-Baltistan local law",
+    "section": "NOT YET MAPPED",
+    "title": "GB-specific hate speech / public order provisions",
+    "jurisdiction": "Gilgit-Baltistan",
+    "keywords": [],
+    "categories": [],
+    "notes": "No verified GB-specific statute has been mapped. Placeholder so the pipeline and any future UI show an explicit 'not yet mapped' state rather than silently omitting GB jurisdiction. Do not fabricate a citation here."
+  }
+]

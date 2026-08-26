@@ -1,0 +1,17 @@
+[
+  {"text": "I love this beautiful day!", "expected_category": "neutral"},
+  {"text": "Just had a great meal with family.", "expected_category": "neutral"},
+  {"text": "Working hard on my new project.", "expected_category": "neutral"},
+  {"text": "The weather has been really nice this week.", "expected_category": "neutral"},
+  {"text": "Why are they so stupid? I hate them.", "expected_category": "offensive"},
+  {"text": "You are such an idiot, get lost.", "expected_category": "offensive"},
+  {"text": "These people are ruining our country, they should be kicked out.", "expected_category": "hate", "group": "campaign_test"},
+  {"text": "These people are ruining our country, they should be kicked out and never allowed back.", "expected_category": "hate", "group": "campaign_test"},
+  {"text": "These filthy people are ruining our country, they should all be kicked out immediately.", "expected_category": "hate", "group": "campaign_test"},
+  {"text": "People from that ethnic group don't belong here, kick them out.", "expected_category": "hate"},
+  {"text": "That religious sect deserves nothing but hatred and enmity from the rest of us.", "expected_category": "hate"},
+  {"text": "Oh sure, great job ruining everything, real geniuses over there.", "expected_category": "offensive"},
+  {"text": "Wow, thanks a lot for making everything worse, just wonderful.", "expected_category": "offensive"},
+  {"text": "Had a quiet evening reading a book.", "expected_category": "neutral"},
+  {"text": "Everyone from that caste is a criminal and should be punished.", "expected_category": "hate"}
+]

@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+torch
+transformers
+numpy
+scikit-learn
+shap
+lime
+jinja2
+python-multipart
+requests
+langgraph
+langchain-core
+sentence-transformers
