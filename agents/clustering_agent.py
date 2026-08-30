@@ -24,6 +24,13 @@ def _get_embedder():
     return _embedder
 
 
+def warm_up():
+    """Load the embedding model eagerly (called at server startup - see fastapp1.py)
+    so the first real /process request doesn't pay the model load cost itself and
+    risk exceeding a client/proxy timeout."""
+    _get_embedder()
+
+
 async def clustering_node(state: PipelineState) -> PipelineState:
     embedder = _get_embedder()
     vec = embedder.encode([state["text"]])[0].tolist()

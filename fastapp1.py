@@ -4,12 +4,13 @@ import pickle
 import numpy as np
 import re
 import json
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from agents.auth import require_api_key
 import logging
 
 # Configure logging
@@ -183,7 +184,7 @@ async def analyze(data: dict):
 
 import requests
 
-@app.post("/api/webhooks/apify")
+@app.post("/api/webhooks/apify", dependencies=[Depends(require_api_key)])
 async def apify_webhook(request: Request):
     """
     Handle incoming webhooks from Apify.
@@ -312,7 +313,7 @@ def log_analysis(text, category, confidence, language, username="Anonymous", pla
 
 # --- New Endpoints ---
 
-@app.post("/scrape")
+@app.post("/scrape", dependencies=[Depends(require_api_key)])
 async def scrape_profile(data: dict):
     """
     Mock endpoint to simulate scraping a profile.
@@ -367,7 +368,7 @@ async def scrape_profile(data: dict):
         "risk_score": random.randint(0, 100) # Mock risk score
     })
 
-@app.get("/trends")
+@app.get("/trends", dependencies=[Depends(require_api_key)])
 async def get_trends():
     """Aggregate logs for trend analysis"""
     try:
@@ -396,7 +397,7 @@ async def get_trends():
     except Exception as e:
         return JSONResponse(content={"error": True, "message": str(e)}, status_code=500)
 
-@app.get("/flagged")
+@app.get("/flagged", dependencies=[Depends(require_api_key)])
 async def get_flagged():
     """Get recent hate/offensive content"""
     try:
@@ -410,7 +411,7 @@ async def get_flagged():
     except Exception as e:
         return JSONResponse(content={"error": True, "message": str(e)}, status_code=500)
 
-@app.get("/monitoring")
+@app.get("/monitoring", dependencies=[Depends(require_api_key)])
 async def get_monitoring():
     """Get monitored users"""
     try:
@@ -424,7 +425,7 @@ async def get_monitoring():
     except Exception as e:
         return JSONResponse(content={"error": True, "message": str(e)}, status_code=500)
 
-@app.get("/live-feed")
+@app.get("/live-feed", dependencies=[Depends(require_api_key)])
 async def get_live_feed():
     """Get recent analyzed content (all categories)"""
     try:
@@ -441,5 +442,15 @@ async def get_live_feed():
 # --- Multi-agent orchestration layer (additive; see agents/ package) ---
 from agents.router import router as agents_router
 app.include_router(agents_router)
+
+
+@app.on_event("startup")
+async def _warm_up_agents():
+    # Loads the clustering agent's embedding model during server startup instead
+    # of on the first real request, so the first /process call doesn't have to
+    # eat a multi-second (or, on first-ever run, multi-minute download) cold
+    # start that can exceed a client/proxy timeout.
+    from agents.clustering_agent import warm_up
+    warm_up()
 
 

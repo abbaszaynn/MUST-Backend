@@ -5,12 +5,13 @@ existing routes are modified or removed.
 """
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 import agents.db as db
 import agents.orchestrator as orchestrator
+from agents.auth import require_api_key
 from agents.ingestion_agent import stream_posts
 from agents.state import PipelineState
 
@@ -76,7 +77,7 @@ def _state_to_response(state: PipelineState) -> Dict[str, Any]:
     }
 
 
-@router.post("/process")
+@router.post("/process", dependencies=[Depends(require_api_key)])
 async def process_text(payload: ProcessRequest):
     state = await orchestrator.run_pipeline(
         text=payload.text, username=payload.username, platform=payload.platform, source="manual"
@@ -84,7 +85,7 @@ async def process_text(payload: ProcessRequest):
     return JSONResponse(content=_state_to_response(state))
 
 
-@router.post("/ingest-and-process")
+@router.post("/ingest-and-process", dependencies=[Depends(require_api_key)])
 async def ingest_and_process(payload: IngestRequest):
     results = []
     flagged_count = 0
@@ -113,7 +114,7 @@ async def ingest_and_process(payload: IngestRequest):
     )
 
 
-@router.get("/review-queue")
+@router.get("/review-queue", dependencies=[Depends(require_api_key)])
 async def get_review_queue(
     status: str = "open", platform: Optional[str] = None, limit: int = 50, offset: int = 0
 ):
@@ -121,7 +122,7 @@ async def get_review_queue(
     return JSONResponse(content={"error": False, "total": total, "data": rows})
 
 
-@router.post("/review-queue/{review_queue_id}/decision")
+@router.post("/review-queue/{review_queue_id}/decision", dependencies=[Depends(require_api_key)])
 async def decide_review_queue_item(review_queue_id: int, payload: DecisionRequest):
     ok = db.record_review_decision(
         review_queue_id=review_queue_id,
@@ -144,12 +145,12 @@ async def decide_review_queue_item(review_queue_id: int, payload: DecisionReques
     )
 
 
-@router.get("/stats/districts")
+@router.get("/stats/districts", dependencies=[Depends(require_api_key)])
 async def stats_districts():
     return JSONResponse(content={"error": False, "data": db.get_district_stats()})
 
 
-@router.get("/stats/platforms")
+@router.get("/stats/platforms", dependencies=[Depends(require_api_key)])
 async def stats_platforms():
     return JSONResponse(content={"error": False, "data": db.get_platform_stats()})
 
