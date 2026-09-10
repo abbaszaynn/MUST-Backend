@@ -29,6 +29,7 @@ async def escalation_node(state: PipelineState) -> PipelineState:
         language=state.get("language"),
         username=state.get("username", "Anonymous"),
         platform=state.get("platform", "Web"),
+        district=state.get("district") or "Unknown",
         cluster_id=state.get("cluster_id"),
         campaign_flag=state.get("campaign_flag", False),
         legal_provisions=state.get("legal_matches", []),

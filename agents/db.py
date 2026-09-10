@@ -85,6 +85,74 @@ def init_agent_tables() -> None:
     except sqlite3.OperationalError:
         pass
 
+    # Monitored-target columns: the Facebook page to scrape and the latest scrape
+    # state, so the dashboard can show whether Apify is actually running.
+    for col, ddl in (
+        ("profile_url", "TEXT"),
+        ("last_scrape_status", "TEXT"),
+        ("last_scrape_at", "TEXT"),
+        ("last_scrape_note", "TEXT"),
+    ):
+        try:
+            c.execute(f"ALTER TABLE users ADD COLUMN {col} {ddl}")
+        except sqlite3.OperationalError:
+            pass
+
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS scrape_runs
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  user_id INTEGER NOT NULL REFERENCES users(id),
+                  apify_run_id TEXT,
+                  status TEXT DEFAULT 'STARTING',
+                  posts INTEGER DEFAULT 0,
+                  flagged INTEGER DEFAULT 0,
+                  error TEXT,
+                  started_at TEXT,
+                  finished_at TEXT)"""
+    )
+    try:
+        c.execute("ALTER TABLE scrape_runs ADD COLUMN comments INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    # Every post and comment collected from a monitored page, with where it came
+    # from and what the pipeline concluded. item_key (the post/comment URL, or a
+    # text hash) de-duplicates re-scrapes so the same comment is never re-flagged.
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS scraped_items
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  target_id INTEGER NOT NULL REFERENCES users(id),
+                  scrape_run_id INTEGER REFERENCES scrape_runs(id),
+                  kind TEXT NOT NULL,
+                  item_key TEXT NOT NULL,
+                  author TEXT,
+                  text TEXT,
+                  url TEXT,
+                  parent_url TEXT,
+                  posted_at TEXT,
+                  category TEXT,
+                  confidence REAL,
+                  language TEXT,
+                  case_file_id INTEGER REFERENCES case_files(id),
+                  created_at TEXT,
+                  UNIQUE (target_id, item_key))"""
+    )
+
+    # A backend restart kills the watcher threads, so any run still marked active
+    # can never finish - close it out, or it would block new scrapes forever.
+    now = _now()
+    c.execute(
+        """UPDATE scrape_runs SET status = 'FAILED', finished_at = ?,
+                  error = 'The backend restarted before this run finished.'
+           WHERE status IN ('STARTING', 'RUNNING', 'PROCESSING')""",
+        (now,),
+    )
+    c.execute(
+        """UPDATE users SET last_scrape_status = 'FAILED',
+                  last_scrape_note = 'The backend restarted before the last scrape finished.'
+           WHERE last_scrape_status IN ('STARTING', 'RUNNING', 'PROCESSING')"""
+    )
+
     conn.commit()
     conn.close()
 
@@ -179,6 +247,7 @@ def insert_case_file(
     legal_provisions: List[Dict[str, Any]],
     sarcasm_score: Optional[float],
     sarcasm_flag: bool,
+    district: str = "Unknown",
 ) -> int:
     # requires_human_review is a hardcoded SQL literal (1), never a bound
     # parameter - no caller can pass a different value through this function,
@@ -188,9 +257,9 @@ def insert_case_file(
     c = conn.cursor()
     c.execute(
         """INSERT INTO case_files
-           (text, category, confidence, language, username, platform, cluster_id,
+           (text, category, confidence, language, username, platform, district, cluster_id,
             campaign_flag, legal_provisions, sarcasm_score, sarcasm_flag, requires_human_review)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
         (
             text,
             category,
@@ -198,6 +267,7 @@ def insert_case_file(
             language,
             username,
             platform,
+            district or "Unknown",
             cluster_id,
             1 if campaign_flag else 0,
             json.dumps(legal_provisions or []),
@@ -330,3 +400,187 @@ def get_platform_stats() -> List[Dict[str, Any]]:
     data = [dict(row) for row in c.fetchall()]
     conn.close()
     return data
+
+
+# --- Monitored targets & scrape runs ------------------------------------------
+
+ACTIVE_SCRAPE_STATES = ("STARTING", "RUNNING", "PROCESSING")
+_RUN_FIELDS = {"apify_run_id", "status", "posts", "comments", "flagged", "error", "finished_at"}
+
+
+def _now() -> str:
+    # ISO seconds, which browsers parse reliably with new Date().
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def add_target(username: str, profile_url: str, district: str = "Unknown", platform: str = "Facebook") -> int:
+    """Lock a page as a monitored target. Re-adding an existing name updates its URL and district.
+
+    The district is assigned by the officer: Facebook page posts carry no location,
+    so this is the page's area of focus, not a location detected from the posts.
+    """
+    district = district or "Unknown"
+    conn = _connect()
+    c = conn.cursor()
+    c.execute("SELECT id FROM users WHERE username = ?", (username,))
+    row = c.fetchone()
+    if row:
+        user_id = row["id"]
+        c.execute(
+            "UPDATE users SET profile_url = ?, platform = ?, district = ? WHERE id = ?",
+            (profile_url, platform, district, user_id),
+        )
+    else:
+        c.execute(
+            """INSERT INTO users (username, platform, risk_score, last_active, profile_url, district, last_scrape_status)
+               VALUES (?, ?, 0, ?, ?, ?, 'NEVER')""",
+            (username, platform, _now(), profile_url, district),
+        )
+        user_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    return user_id
+
+
+def get_target(user_id: int) -> Optional[Dict[str, Any]]:
+    conn = _connect()
+    row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def active_scrape_for(user_id: int) -> bool:
+    conn = _connect()
+    row = conn.execute(
+        f"SELECT 1 FROM scrape_runs WHERE user_id = ? AND status IN ({','.join('?' * len(ACTIVE_SCRAPE_STATES))}) LIMIT 1",
+        (user_id, *ACTIVE_SCRAPE_STATES),
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+def create_scrape_run(user_id: int) -> int:
+    conn = _connect()
+    c = conn.cursor()
+    now = _now()
+    c.execute("INSERT INTO scrape_runs (user_id, status, started_at) VALUES (?, 'STARTING', ?)", (user_id, now))
+    run_id = c.lastrowid
+    c.execute(
+        "UPDATE users SET last_scrape_status = 'STARTING', last_scrape_at = ?, last_scrape_note = ? WHERE id = ?",
+        (now, "Starting the Apify run...", user_id),
+    )
+    conn.commit()
+    conn.close()
+    return run_id
+
+
+def update_scrape_run(run_id: int, **fields) -> None:
+    fields = {k: v for k, v in fields.items() if k in _RUN_FIELDS}
+    if not fields:
+        return
+    conn = _connect()
+    conn.execute(
+        f"UPDATE scrape_runs SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
+        (*fields.values(), run_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_target_scrape_state(user_id: int, status: str, note: str) -> None:
+    conn = _connect()
+    conn.execute(
+        "UPDATE users SET last_scrape_status = ?, last_scrape_note = ?, last_scrape_at = ? WHERE id = ?",
+        (status, note, _now(), user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def refresh_target_risk(user_id: int) -> None:
+    """Risk score = share of everything scraped from this page - its posts and the
+    comments left under them - that was classified hate or offensive."""
+    conn = _connect()
+    c = conn.cursor()
+    c.execute(
+        """SELECT COUNT(*) AS total,
+                  SUM(CASE WHEN category IN ('hate', 'offensive') THEN 1 ELSE 0 END) AS flagged
+           FROM scraped_items WHERE target_id = ?""",
+        (user_id,),
+    )
+    row = c.fetchone()
+    total, flagged = row["total"] or 0, row["flagged"] or 0
+    risk = round(100.0 * flagged / total, 1) if total else 0.0
+    c.execute("UPDATE users SET risk_score = ?, last_active = ? WHERE id = ?", (risk, _now(), user_id))
+    conn.commit()
+    conn.close()
+
+
+def list_scrape_runs(user_id: Optional[int] = None, limit: int = 20) -> List[Dict[str, Any]]:
+    conn = _connect()
+    sql = """SELECT sr.*, u.username, u.profile_url FROM scrape_runs sr
+             JOIN users u ON u.id = sr.user_id"""
+    params: List[Any] = []
+    if user_id is not None:
+        sql += " WHERE sr.user_id = ?"
+        params.append(user_id)
+    sql += " ORDER BY sr.id DESC LIMIT ?"
+    params.append(limit)
+    rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    conn.close()
+    return rows
+
+
+def scraped_item_exists(target_id: int, item_key: str) -> bool:
+    conn = _connect()
+    row = conn.execute(
+        "SELECT 1 FROM scraped_items WHERE target_id = ? AND item_key = ? LIMIT 1", (target_id, item_key)
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+def insert_scraped_item(
+    target_id: int,
+    scrape_run_id: int,
+    kind: str,
+    item_key: str,
+    author: Optional[str],
+    text: str,
+    url: Optional[str],
+    parent_url: Optional[str],
+    posted_at: Optional[str],
+    category: Optional[str],
+    confidence: Optional[float],
+    language: Optional[str],
+    case_file_id: Optional[int],
+) -> None:
+    conn = _connect()
+    conn.execute(
+        """INSERT OR IGNORE INTO scraped_items
+           (target_id, scrape_run_id, kind, item_key, author, text, url, parent_url, posted_at,
+            category, confidence, language, case_file_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (target_id, scrape_run_id, kind, item_key, author, text, url, parent_url, posted_at,
+         category, confidence, language, case_file_id, _now()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_target_items(target_id: int, limit: int = 300) -> List[Dict[str, Any]]:
+    """Posts and comments scraped from a page, with the review state of any that were flagged."""
+    conn = _connect()
+    rows = conn.execute(
+        """SELECT si.id, si.kind, si.author, si.text, si.url, si.parent_url, si.posted_at,
+                  si.category, si.confidence, si.language, si.case_file_id, si.created_at,
+                  rq.status AS review_status
+           FROM scraped_items si
+           LEFT JOIN review_queue rq ON rq.case_file_id = si.case_file_id
+           WHERE si.target_id = ?
+           ORDER BY si.id DESC
+           LIMIT ?""",
+        (target_id, limit),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]

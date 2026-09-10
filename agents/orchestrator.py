@@ -73,12 +73,17 @@ def get_graph():
 
 
 async def run_pipeline(
-    text: str, username: str = "Anonymous", platform: str = "Web", source: str = "manual"
+    text: str,
+    username: str = "Anonymous",
+    platform: str = "Web",
+    source: str = "manual",
+    district: str = "Unknown",
 ) -> PipelineState:
     initial_state: PipelineState = {
         "text": text,
         "username": username,
         "platform": platform,
         "source": source,
+        "district": district or "Unknown",
     }
     return await get_graph().ainvoke(initial_state)

@@ -204,7 +204,12 @@ async def apify_webhook(request: Request):
         # Fetch dataset items
         # Note: In production, you might want to use the Apify Client or handle pagination
         dataset_url = f"https://api.apify.com/v2/datasets/{dataset_id}/items"
-        response = requests.get(dataset_url)
+        apify_token = os.environ.get("APIFY_API_TOKEN", "")
+        response = requests.get(
+            dataset_url,
+            headers={"Authorization": f"Bearer {apify_token}"} if apify_token else {},
+            timeout=60,
+        )
         
         if response.status_code != 200:
             logging.error(f"Failed to fetch dataset: {response.text}")

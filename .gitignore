@@ -10,3 +10,6 @@ __pycache__/
 bertuncased-combine/
 roberta_combine_f1/
 xlm-roberta_combine_extended/
+
+# Secrets - real values live only in .env, never in .env.example.
+.env

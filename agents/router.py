@@ -3,7 +3,7 @@ New API surface for the multi-agent pipeline. Mounted additively into
 fastapp1.py (app.include_router(agents_router)) - none of fastapp1.py's
 existing routes are modified or removed.
 """
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
@@ -12,7 +12,9 @@ from pydantic import BaseModel
 import agents.db as db
 import agents.orchestrator as orchestrator
 from agents.auth import require_api_key
-from agents.ingestion_agent import stream_posts
+from agents.ingestion_agent import MAX_RESULTS, ApifyError, apify_config, stream_posts
+import agents.scrape_jobs as scrape_jobs
+from urllib.parse import parse_qs, urlparse
 from agents.state import PipelineState
 
 # `import agents.orchestrator as orchestrator` (not `from ... import run_pipeline`)
@@ -36,6 +38,7 @@ class ProcessRequest(BaseModel):
 class IngestRequest(BaseModel):
     limit: int = 20
     source: str = "auto"  # "auto" | "apify" | "sample"
+    urls: Optional[List[str]] = None  # public Facebook page URLs; defaults to APIFY_START_URLS
 
 
 class DecisionRequest(BaseModel):
@@ -85,12 +88,41 @@ async def process_text(payload: ProcessRequest):
     return JSONResponse(content=_state_to_response(state))
 
 
+@router.get("/ingest/status", dependencies=[Depends(require_api_key)])
+async def ingest_status():
+    """Whether live ingestion is configured - never returns the token itself."""
+    token, actor, urls = apify_config()
+    return JSONResponse(
+        content={
+            "error": False,
+            "apify_configured": bool(token),
+            "actor": actor,
+            "start_urls": urls,
+            "max_results_per_page": MAX_RESULTS,
+        }
+    )
+
+
 @router.post("/ingest-and-process", dependencies=[Depends(require_api_key)])
 async def ingest_and_process(payload: IngestRequest):
     results = []
     flagged_count = 0
     source_used = None
-    for post in stream_posts(limit=payload.limit, source=payload.source):
+    try:
+        posts = list(stream_posts(limit=payload.limit, source=payload.source, urls=payload.urls))
+    except ApifyError as e:
+        return JSONResponse(
+            content={
+                "error": True,
+                "message": str(e),
+                "source_used": payload.source,
+                "processed": 0,
+                "flagged": 0,
+                "results": [],
+            },
+            status_code=502,
+        )
+    for post in posts:
         source_used = post.get("source", source_used)
         state = await orchestrator.run_pipeline(
             text=post["text"], username=post["username"], platform=post["platform"], source=source_used
@@ -163,3 +195,60 @@ async def legal_reference():
     from agents.legal_mapping_agent import LEGAL_REFERENCE
 
     return JSONResponse(content={"error": False, "data": LEGAL_REFERENCE})
+
+
+# --- Monitored targets --------------------------------------------------------
+
+FACEBOOK_HOSTS = {"facebook.com", "www.facebook.com", "m.facebook.com", "web.facebook.com"}
+
+
+class TargetRequest(BaseModel):
+    profile_url: str
+    name: Optional[str] = None
+    district: Optional[str] = None  # officer-assigned GB district for this page
+
+
+def _name_from_url(url: str) -> str:
+    parsed = urlparse(url)
+    ids = parse_qs(parsed.query).get("id")
+    if ids:
+        return f"fb_{ids[0]}"
+    segments = [s for s in parsed.path.split("/") if s]
+    return segments[0] if segments else url
+
+
+@router.post("/targets", dependencies=[Depends(require_api_key)])
+async def add_target(payload: TargetRequest):
+    url = payload.profile_url.strip()
+    if urlparse(url).netloc.lower() not in FACEBOOK_HOSTS:
+        return JSONResponse(
+            content={"error": True, "message": "Enter a public Facebook page URL, e.g. https://www.facebook.com/PageName/"},
+            status_code=400,
+        )
+    name = (payload.name or "").strip() or _name_from_url(url)
+    user_id = db.add_target(name, url, (payload.district or "").strip() or "Unknown")
+    return JSONResponse(content={"error": False, "id": user_id, "username": name})
+
+
+@router.post("/targets/{user_id}/scrape", dependencies=[Depends(require_api_key)])
+async def scrape_target(user_id: int, limit: int = 10):
+    if not db.get_target(user_id):
+        return JSONResponse(content={"error": True, "message": "Target not found."}, status_code=404)
+    try:
+        run_id = scrape_jobs.start_target_scrape(user_id, limit)
+    except ApifyError as e:
+        return JSONResponse(content={"error": True, "message": str(e)}, status_code=400)
+    return JSONResponse(content={"error": False, "scrape_run_id": run_id, "status": "RUNNING"})
+
+
+@router.get("/scrape-runs", dependencies=[Depends(require_api_key)])
+async def scrape_runs(user_id: Optional[int] = None, limit: int = 20):
+    return JSONResponse(content={"error": False, "data": db.list_scrape_runs(user_id, limit)})
+
+
+@router.get("/targets/{user_id}/posts", dependencies=[Depends(require_api_key)])
+async def target_posts(user_id: int, limit: int = 50):
+    target = db.get_target(user_id)
+    if not target:
+        return JSONResponse(content={"error": True, "message": "Target not found."}, status_code=404)
+    return JSONResponse(content={"error": False, "data": db.get_target_posts(target["username"], limit)})

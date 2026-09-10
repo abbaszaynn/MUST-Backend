@@ -7,6 +7,7 @@ class PipelineState(TypedDict, total=False):
     username: str
     platform: str
     source: str  # "manual" | "apify" | "sample"
+    district: str  # GB district assigned to the monitored target; "Unknown" otherwise
 
     # --- classify_agent output ---
     error: bool
