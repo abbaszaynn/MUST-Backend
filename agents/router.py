@@ -247,8 +247,8 @@ async def scrape_runs(user_id: Optional[int] = None, limit: int = 20):
 
 
 @router.get("/targets/{user_id}/posts", dependencies=[Depends(require_api_key)])
-async def target_posts(user_id: int, limit: int = 50):
-    target = db.get_target(user_id)
-    if not target:
+async def target_posts(user_id: int, limit: int = 300):
+    """Posts and comments scraped from a monitored page."""
+    if not db.get_target(user_id):
         return JSONResponse(content={"error": True, "message": "Target not found."}, status_code=404)
-    return JSONResponse(content={"error": False, "data": db.get_target_posts(target["username"], limit)})
+    return JSONResponse(content={"error": False, "data": db.get_target_items(user_id, limit)})
