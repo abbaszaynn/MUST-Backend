@@ -26,14 +26,35 @@ CONTRAST_PATTERN = re.compile(
     r"(?:so (?:smart|great|brilliant|nice)).{0,40}(?:idiot|stupid|hate|kill)"
 )
 
+MARKER_WEIGHT = 0.2
+CONTRAST_WEIGHT = 0.5
+FLAG_THRESHOLD = 0.4
+
+
+def score_text(text: str) -> dict:
+    """Run the heuristic over one string.
+
+    Shared by the graph node and the /sarcasm/test endpoint, so what the
+    dashboard demonstrates is the rule the pipeline actually applies rather
+    than a re-implementation of it that could drift.
+    """
+    lowered = (text or "").lower()
+    matched = [m for m in SARCASM_MARKERS if m in lowered]
+    contrast_hit = bool(CONTRAST_PATTERN.search(lowered))
+
+    score = min(1.0, MARKER_WEIGHT * len(matched) + (CONTRAST_WEIGHT if contrast_hit else 0.0))
+    return {
+        "score": round(score, 2),
+        "flag": score >= FLAG_THRESHOLD,
+        "matched_markers": matched,
+        "contrast_pattern": contrast_hit,
+        "note": f"heuristic markers={len(matched)}, contrast_pattern={contrast_hit}",
+    }
+
 
 async def sarcasm_node(state: PipelineState) -> PipelineState:
-    text = state["text"].lower()
-    marker_hits = sum(1 for m in SARCASM_MARKERS if m in text)
-    contrast_hit = bool(CONTRAST_PATTERN.search(text))
-
-    score = min(1.0, 0.2 * marker_hits + (0.5 if contrast_hit else 0.0))
-    state["sarcasm_score"] = round(score, 2)
-    state["sarcasm_flag"] = score >= 0.4
-    state["sarcasm_note"] = f"heuristic markers={marker_hits}, contrast_pattern={contrast_hit}"
+    result = score_text(state["text"])
+    state["sarcasm_score"] = result["score"]
+    state["sarcasm_flag"] = result["flag"]
+    state["sarcasm_note"] = result["note"]
     return state

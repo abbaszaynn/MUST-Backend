@@ -35,19 +35,22 @@ import agents.db as db
 import agents.orchestrator as orchestrator
 from agents.ingestion_agent import MAX_RESULTS, ApifyError, apify_config
 
+# Prices and COMMENTS_PER_POST live in agents/pricing.py so that the hard cost cap
+# sent with each run and the cost reported on the Apify Records page are computed
+# from one set of numbers and can never drift apart.
+from agents.pricing import (
+    COMMENT_PRICE_USD,
+    COMMENTS_PER_POST,
+    POST_PRICE_USD,
+    START_FEE_USD,
+)
+
 API = "https://api.apify.com/v2"
 POLL_SECONDS = 8
 MAX_WAIT_SECONDS = 600
 TERMINAL = {"SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"}
 
 COMMENTS_ACTOR_DEFAULT = "apify/facebook-comments-scraper"
-COMMENTS_PER_POST = 20
-
-# Free-tier prices of the two official actors, used only to size the hard cost cap
-# sent with each run. Apify stops a run once it reaches the cap.
-POST_PRICE_USD = 0.005
-COMMENT_PRICE_USD = 0.0025
-START_FEE_USD = 0.01
 
 
 def _auth(token: str):

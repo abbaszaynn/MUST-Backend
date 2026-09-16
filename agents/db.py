@@ -584,3 +584,277 @@ def get_target_items(target_id: int, limit: int = 300) -> List[Dict[str, Any]]:
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# --- Apify collection record --------------------------------------------------
+
+def _parse_ts(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        # fastapp1.py's older rows use "YYYY-MM-DD HH:MM:SS[.ffffff]".
+        for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
+            try:
+                return datetime.strptime(value, fmt)
+            except ValueError:
+                continue
+    return None
+
+
+def get_scrape_overview(limit: int = 100) -> Dict[str, Any]:
+    """Everything the Apify Records page reports: what each run collected, what it
+    cost at list prices, how long it took, and how often runs happen.
+
+    Cost is estimated locally from agents/pricing.py - it is not read back from
+    Apify's billing API, so it is a list-price estimate, not an invoice.
+    """
+    from agents.pricing import (
+        COMMENT_PRICE_USD,
+        COMMENTS_PER_POST,
+        PKR_PER_USD,
+        POST_PRICE_USD,
+        START_FEE_USD,
+        estimate_run_cost_usd,
+    )
+
+    conn = _connect()
+    c = conn.cursor()
+
+    rows = [
+        dict(r)
+        for r in c.execute(
+            """SELECT sr.id, sr.user_id, sr.apify_run_id, sr.status, sr.posts,
+                      COALESCE(sr.comments, 0) AS comments, sr.flagged, sr.error,
+                      sr.started_at, sr.finished_at,
+                      u.username, u.profile_url, u.district
+               FROM scrape_runs sr
+               JOIN users u ON u.id = sr.user_id
+               ORDER BY sr.id DESC
+               LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    ]
+
+    # How many of each run's items the pipeline actually classified, and how they landed.
+    per_run: Dict[int, Dict[str, int]] = {}
+    for r in c.execute(
+        """SELECT scrape_run_id AS run_id,
+                  COUNT(*) AS items,
+                  SUM(CASE WHEN category = 'hate' THEN 1 ELSE 0 END) AS hate,
+                  SUM(CASE WHEN category = 'offensive' THEN 1 ELSE 0 END) AS offensive,
+                  SUM(CASE WHEN category = 'neutral' THEN 1 ELSE 0 END) AS neutral,
+                  SUM(CASE WHEN category IS NULL THEN 1 ELSE 0 END) AS unclassified
+           FROM scraped_items
+           WHERE scrape_run_id IS NOT NULL
+           GROUP BY scrape_run_id"""
+    ).fetchall():
+        d = dict(r)
+        per_run[d.pop("run_id")] = {k: (v or 0) for k, v in d.items()}
+
+    starts: List[datetime] = []
+    durations: List[float] = []
+    for row in rows:
+        started, finished = _parse_ts(row["started_at"]), _parse_ts(row["finished_at"])
+        row["duration_seconds"] = (
+            round((finished - started).total_seconds()) if started and finished else None
+        )
+        if row["duration_seconds"] is not None:
+            durations.append(row["duration_seconds"])
+        if started:
+            starts.append(started)
+        row["cost_usd"] = round(estimate_run_cost_usd(row["posts"], row["comments"]), 4)
+        row["cost_pkr"] = round(row["cost_usd"] * PKR_PER_USD, 2)
+        row["items"] = per_run.get(row["id"], {})
+
+    # Cadence: scrapes are started by an officer today, so this describes the
+    # observed spacing between runs, not a configured schedule.
+    starts_sorted = sorted(starts)
+    gaps = [
+        (b - a).total_seconds()
+        for a, b in zip(starts_sorted, starts_sorted[1:])
+        if (b - a).total_seconds() > 0
+    ]
+
+    totals_posts = sum(r["posts"] or 0 for r in rows)
+    totals_comments = sum(r["comments"] or 0 for r in rows)
+    total_cost_usd = round(sum(r["cost_usd"] for r in rows), 4)
+
+    item_totals = c.execute(
+        """SELECT COUNT(*) AS total,
+                  SUM(CASE WHEN kind = 'post' THEN 1 ELSE 0 END) AS posts,
+                  SUM(CASE WHEN kind = 'comment' THEN 1 ELSE 0 END) AS comments,
+                  SUM(CASE WHEN category = 'hate' THEN 1 ELSE 0 END) AS hate,
+                  SUM(CASE WHEN category = 'offensive' THEN 1 ELSE 0 END) AS offensive,
+                  SUM(CASE WHEN category = 'neutral' THEN 1 ELSE 0 END) AS neutral,
+                  SUM(CASE WHEN category IS NULL THEN 1 ELSE 0 END) AS unclassified
+           FROM scraped_items"""
+    ).fetchone()
+
+    conn.close()
+
+    stored = {k: (v or 0) for k, v in dict(item_totals).items()}
+    flagged = stored["hate"] + stored["offensive"]
+
+    return {
+        "runs": rows,
+        "totals": {
+            "runs": len(rows),
+            "succeeded": sum(1 for r in rows if r["status"] == "SUCCEEDED"),
+            "failed": sum(1 for r in rows if r["status"] == "FAILED"),
+            "active": sum(1 for r in rows if r["status"] in ACTIVE_SCRAPE_STATES),
+            "posts_collected": totals_posts,
+            "comments_collected": totals_comments,
+            "items_stored": stored["total"],
+            "posts_stored": stored["posts"],
+            "comments_stored": stored["comments"],
+            "hate": stored["hate"],
+            "offensive": stored["offensive"],
+            "neutral": stored["neutral"],
+            "unclassified": stored["unclassified"],
+            "flagged": flagged,
+            "flag_rate": round(100.0 * flagged / stored["total"], 1) if stored["total"] else 0.0,
+            "comments_per_post": (
+                round(totals_comments / totals_posts, 1) if totals_posts else 0.0
+            ),
+        },
+        "cost": {
+            "total_usd": total_cost_usd,
+            "total_pkr": round(total_cost_usd * PKR_PER_USD, 2),
+            "per_flagged_usd": round(total_cost_usd / flagged, 4) if flagged else None,
+            "post_price_usd": POST_PRICE_USD,
+            "comment_price_usd": COMMENT_PRICE_USD,
+            "start_fee_usd": START_FEE_USD,
+            "pkr_per_usd": PKR_PER_USD,
+            "basis": (
+                "Estimated locally from Apify's published pay-per-event prices, "
+                "not read back from Apify's billing API."
+            ),
+        },
+        "cadence": {
+            "scheduled": False,
+            "trigger": "Started by an officer from User Monitoring (no automatic schedule is configured).",
+            "comments_requested_per_post": COMMENTS_PER_POST,
+            "avg_run_seconds": round(sum(durations) / len(durations)) if durations else None,
+            "longest_run_seconds": max(durations) if durations else None,
+            "avg_gap_seconds": round(sum(gaps) / len(gaps)) if gaps else None,
+            "first_run_at": starts_sorted[0].isoformat(timespec="seconds") if starts_sorted else None,
+            "last_run_at": starts_sorted[-1].isoformat(timespec="seconds") if starts_sorted else None,
+        },
+    }
+
+
+# --- Clustering (campaign detection) ------------------------------------------
+
+def list_clusters(limit: int = 60, min_members: int = 1) -> List[Dict[str, Any]]:
+    """Clusters with their members, newest-largest first.
+
+    This is the simplified embedding + cosine-similarity grouping documented in
+    clustering_agent.py - a placeholder for a full ULTRA integration, not ULTRA
+    itself. Callers must present it as such.
+    """
+    conn = _connect()
+    c = conn.cursor()
+    clusters = [
+        dict(r)
+        for r in c.execute(
+            """SELECT id, platform, representative_text, member_count, campaign_flag,
+                      created_at, updated_at
+               FROM clusters
+               WHERE member_count >= ?
+               ORDER BY member_count DESC, id DESC
+               LIMIT ?""",
+            (min_members, limit),
+        ).fetchall()
+    ]
+    if not clusters:
+        conn.close()
+        return []
+
+    ids = [c_["id"] for c_ in clusters]
+    placeholders = ",".join("?" * len(ids))
+
+    members: Dict[int, List[Dict[str, Any]]] = {i: [] for i in ids}
+    for r in c.execute(
+        f"""SELECT cluster_id, id, text, similarity_to_centroid, added_at
+            FROM cluster_members
+            WHERE cluster_id IN ({placeholders})
+            ORDER BY added_at ASC""",
+        ids,
+    ).fetchall():
+        d = dict(r)
+        members[d["cluster_id"]].append(d)
+
+    # Case files carry the district/username, so a cluster can be tied to real cases.
+    cases: Dict[int, List[Dict[str, Any]]] = {i: [] for i in ids}
+    for r in c.execute(
+        f"""SELECT cf.cluster_id, cf.id, cf.username, cf.platform, cf.district,
+                   cf.category, cf.confidence, cf.created_at, rq.id AS review_queue_id,
+                   rq.status AS review_status
+            FROM case_files cf
+            LEFT JOIN review_queue rq ON rq.case_file_id = cf.id
+            WHERE cf.cluster_id IN ({placeholders})
+            ORDER BY cf.id DESC""",
+        ids,
+    ).fetchall():
+        d = dict(r)
+        cases[d["cluster_id"]].append(d)
+
+    conn.close()
+
+    for cl in clusters:
+        cl["members"] = members.get(cl["id"], [])
+        cl["cases"] = cases.get(cl["id"], [])
+        authors = {case["username"] for case in cl["cases"] if case["username"]}
+        districts = {case["district"] for case in cl["cases"] if case["district"]}
+        cl["distinct_authors"] = len(authors)
+        cl["districts"] = sorted(districts)
+    return clusters
+
+
+# --- Sarcasm heuristic --------------------------------------------------------
+
+def get_sarcasm_overview(limit: int = 50) -> Dict[str, Any]:
+    """What the sarcasm heuristic has actually recorded.
+
+    The node only runs for classifications inside the ambiguous confidence band,
+    so `scored` is normally far smaller than the total number of case files -
+    that is expected behaviour, not missing data.
+    """
+    conn = _connect()
+    c = conn.cursor()
+
+    totals = dict(
+        c.execute(
+            """SELECT COUNT(*) AS case_files,
+                      COUNT(sarcasm_score) AS scored,
+                      SUM(CASE WHEN sarcasm_flag = 1 THEN 1 ELSE 0 END) AS flagged
+               FROM case_files"""
+        ).fetchone()
+    )
+
+    recent = [
+        dict(r)
+        for r in c.execute(
+            """SELECT cf.id, cf.text, cf.category, cf.confidence, cf.language,
+                      cf.username, cf.platform, cf.district, cf.sarcasm_score,
+                      cf.sarcasm_flag, cf.created_at, rq.status AS review_status
+               FROM case_files cf
+               LEFT JOIN review_queue rq ON rq.case_file_id = cf.id
+               WHERE cf.sarcasm_score IS NOT NULL
+               ORDER BY cf.id DESC
+               LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    ]
+    conn.close()
+
+    return {
+        "totals": {
+            "case_files": totals["case_files"] or 0,
+            "scored": totals["scored"] or 0,
+            "flagged": totals["flagged"] or 0,
+        },
+        "recent": recent,
+    }

@@ -252,3 +252,120 @@ async def target_posts(user_id: int, limit: int = 300):
     if not db.get_target(user_id):
         return JSONResponse(content={"error": True, "message": "Target not found."}, status_code=404)
     return JSONResponse(content={"error": False, "data": db.get_target_items(user_id, limit)})
+
+
+# --- Collection record, clustering and sarcasm --------------------------------
+
+@router.get("/stats/apify", dependencies=[Depends(require_api_key)])
+async def stats_apify(limit: int = 100):
+    """Every Apify run: what it collected, how long it took, and what it cost.
+
+    Cost figures are list-price estimates computed locally (agents/pricing.py),
+    not amounts read back from Apify's billing API.
+    """
+    return JSONResponse(content={"error": False, **db.get_scrape_overview(limit)})
+
+
+@router.get("/clusters", dependencies=[Depends(require_api_key)])
+async def clusters(limit: int = 60, min_members: int = 1):
+    """Near-duplicate groupings used for campaign detection.
+
+    `config.status` is "simplified" deliberately: this is embeddings + cosine
+    similarity, the documented placeholder for a full ULTRA integration.
+    """
+    from agents.clustering_agent import CAMPAIGN_MIN_MEMBERS, SIMILARITY_THRESHOLD
+
+    return JSONResponse(
+        content={
+            "error": False,
+            "data": db.list_clusters(limit=limit, min_members=min_members),
+            "config": {
+                "status": "simplified",
+                "similarity_threshold": SIMILARITY_THRESHOLD,
+                "campaign_min_members": CAMPAIGN_MIN_MEMBERS,
+                "embedding_model": "paraphrase-multilingual-MiniLM-L12-v2",
+                "method": "incremental nearest-centroid cosine similarity",
+                "note": (
+                    "Simplified clustering, not a full ULTRA integration. Items are "
+                    "compared one at a time against existing cluster centroids; a group "
+                    "is marked a possible campaign once it reaches the member threshold. "
+                    "Treat a campaign flag as a lead for an officer to verify, never as a "
+                    "finding on its own."
+                ),
+            },
+        }
+    )
+
+
+@router.get("/sarcasm", dependencies=[Depends(require_api_key)])
+async def sarcasm_overview(limit: int = 50):
+    """What the sarcasm heuristic has recorded, plus the exact rule it applies."""
+    from agents.sarcasm_agent import (
+        CONTRAST_PATTERN,
+        CONTRAST_WEIGHT,
+        FLAG_THRESHOLD,
+        MARKER_WEIGHT,
+        SARCASM_MARKERS,
+    )
+    from agents.tiering import SARCASM_HIGH, SARCASM_LOW
+
+    return JSONResponse(
+        content={
+            "error": False,
+            **db.get_sarcasm_overview(limit),
+            "config": {
+                "status": "placeholder",
+                "markers": SARCASM_MARKERS,
+                "contrast_pattern": CONTRAST_PATTERN.pattern,
+                "marker_weight": MARKER_WEIGHT,
+                "contrast_weight": CONTRAST_WEIGHT,
+                "flag_threshold": FLAG_THRESHOLD,
+                "runs_between_confidence": [SARCASM_LOW, SARCASM_HIGH],
+                "note": (
+                    "Rule-based pattern matching, not a trained model, and English-only. "
+                    "The score is not a calibrated probability. The node only runs when the "
+                    "classifier's confidence falls in the ambiguous band, which is why far "
+                    "fewer cases carry a score than exist in total."
+                ),
+            },
+        }
+    )
+
+
+class SarcasmTestRequest(BaseModel):
+    text: str
+
+
+@router.post("/sarcasm/test", dependencies=[Depends(require_api_key)])
+async def sarcasm_test(payload: SarcasmTestRequest):
+    """Run the sarcasm heuristic over one string, without touching the database.
+
+    This calls the same score_text() the pipeline node uses, so what an officer
+    sees here is exactly what the pipeline would record.
+    """
+    from agents.sarcasm_agent import score_text
+
+    return JSONResponse(content={"error": False, **score_text(payload.text)})
+
+
+@router.get("/pipeline/config", dependencies=[Depends(require_api_key)])
+async def pipeline_config():
+    """The thresholds that decide how an item is routed, so the dashboard can
+    explain the pipeline's behaviour from the real values rather than restating
+    them in the frontend where they would go stale."""
+    from agents.clustering_agent import CAMPAIGN_MIN_MEMBERS, SIMILARITY_THRESHOLD
+    from agents.sarcasm_agent import FLAG_THRESHOLD
+    from agents.tiering import SARCASM_HIGH, SARCASM_LOW, TIER_HIGH_MIN, TIER_MEDIUM_MIN
+
+    return JSONResponse(
+        content={
+            "error": False,
+            "sarcasm_band": [SARCASM_LOW, SARCASM_HIGH],
+            "sarcasm_flag_threshold": FLAG_THRESHOLD,
+            "tier_medium_min": TIER_MEDIUM_MIN,
+            "tier_high_min": TIER_HIGH_MIN,
+            "cluster_similarity_threshold": SIMILARITY_THRESHOLD,
+            "campaign_min_members": CAMPAIGN_MIN_MEMBERS,
+            "human_review_required": True,
+        }
+    )
